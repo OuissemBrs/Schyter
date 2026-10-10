@@ -1,0 +1,25 @@
+// Shared-key challenge-response.
+//
+// Alice opens a session by sending her identity and a fresh nonce under the
+// pairwise key k(A,B).  Bob answers with his own identity and the very same
+// nonce, again under k(A,B): only the holder of the pairwise key can produce
+// that reply, and only the initiator can read it.
+
+protocol cr(A,B) {
+  role A {
+    fresh na: Nonce;
+    send_1(A,B, {A,na}k(A,B));
+    recv_2(B,A, {B,na}k(A,B));
+    claim_A1(A,Secret,na);
+    claim_A2(A,Alive);
+    claim_A3(A,Niagree);
+    claim_A4(A,Nisynch);
+  }
+  role B {
+    var na: Nonce;
+    recv_1(A,B, {A,na}k(A,B));
+    send_2(B,A, {B,na}k(A,B));
+    claim_B1(B,Alive);
+    claim_B2(B,Nisynch);
+  }
+}

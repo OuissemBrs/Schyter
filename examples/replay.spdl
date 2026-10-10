@@ -1,0 +1,19 @@
+// A one-message protocol with no freshness at all: nothing ties the message to
+// the session it is received in.  A recorded {A,na} can be replayed into any
+// later session, so the responder can never be sure who it is talking to, and
+// the initiator can complete without any responder at all.
+
+protocol replay(A,B) {
+  role A {
+    fresh na: Nonce;
+    send_1(A,B, {A,na});
+    claim_A1(A,Niagree);
+    claim_A2(A,Nisynch);
+  }
+  role B {
+    var na: Nonce;
+    recv_1(A,B, {A,na});
+    claim_B1(B,Niagree);
+    claim_B2(B,Nisynch);
+  }
+}

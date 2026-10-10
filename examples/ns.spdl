@@ -1,0 +1,28 @@
+// Needham-Schroeder public-key protocol, as written by Lowe.
+//
+// Bob believes he is talking to Alice, but Alice was really talking to Mallory:
+// Lowe's man-in-the-middle breaks every agreement claim Bob makes and leaks his
+// fresh nonce Nb.  See examples/nsl.spdl for the fix.
+
+usertype Key;
+hashfunction h;
+secret sk_i;
+
+protocol ns(I,R) {
+  role I {
+    fresh ni: Nonce;  var nr: Nonce;
+    send_1(I,R, {I,ni}pk(R));
+    recv_2(R,I, {ni,nr}pk(I));
+    send_3(I,R, {nr}pk(R));
+    claim_I1(I,Secret,ni);  claim_I2(I,Secret,nr);
+    claim_I3(I,Niagree);    claim_I4(I,Nisynch);
+  }
+  role R {
+    var ni: Nonce;  fresh nr: Nonce;
+    recv_1(I,R, {I,ni}pk(R));
+    send_2(R,I, {ni,nr}pk(I));
+    recv_3(I,R, {nr}pk(R));
+    claim_R1(R,Secret,ni);  claim_R2(R,Secret,nr);
+    claim_R3(R,Niagree);    claim_R4(R,Nisynch);
+  }
+}

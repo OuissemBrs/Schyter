@@ -1,0 +1,27 @@
+// Needham-Schroeder-Lowe public-key protocol.
+//
+// Identical to examples/ns.spdl except that message 2 also carries the
+// responder's identity: {R,ni,nr}pk(I).  Mallory can no longer relay Bob's
+// message to Alice, because it is bound to Bob, so every claim holds.
+
+usertype Key;
+hashfunction h;
+
+protocol nsl(I,R) {
+  role I {
+    fresh ni: Nonce;  var nr: Nonce;
+    send_1(I,R, {I,ni}pk(R));
+    recv_2(R,I, {R,ni,nr}pk(I));
+    send_3(I,R, {nr}pk(R));
+    claim_I1(I,Secret,ni);  claim_I2(I,Secret,nr);
+    claim_I3(I,Niagree);    claim_I4(I,Nisynch);
+  }
+  role R {
+    var ni: Nonce;  fresh nr: Nonce;
+    recv_1(I,R, {I,ni}pk(R));
+    send_2(R,I, {R,ni,nr}pk(I));
+    recv_3(I,R, {nr}pk(R));
+    claim_R1(R,Secret,ni);  claim_R2(R,Secret,nr);
+    claim_R3(R,Niagree);    claim_R4(R,Nisynch);
+  }
+}

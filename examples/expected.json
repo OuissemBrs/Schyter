@@ -1,0 +1,93 @@
+{
+  "challenge_response": {
+    "bounds": {
+      "max_len": 20,
+      "max_runs": 4
+    },
+    "claims": {
+      "A1": "VERIFIED",
+      "A2": "VERIFIED",
+      "A3": "VERIFIED",
+      "A4": "VERIFIED",
+      "B1": "VERIFIED",
+      "B2": "VERIFIED"
+    },
+    "description": "Shared-key challenge-response."
+  },
+  "challenge_response_no_id": {
+    "bounds": {
+      "max_len": 20,
+      "max_runs": 4
+    },
+    "claims": {
+      "A1": "FALSIFIED",
+      "A2": "VERIFIED",
+      "A3": "VERIFIED",
+      "A4": "VERIFIED",
+      "B1": "VERIFIED",
+      "B2": "VERIFIED"
+    },
+    "description": "Broken variant of challenge_response: the reply carries no responder identity,"
+  },
+  "ns": {
+    "bounds": {
+      "max_len": 20,
+      "max_runs": 4
+    },
+    "claims": {
+      "I1": "VERIFIED",
+      "I2": "VERIFIED",
+      "I3": "VERIFIED",
+      "I4": "VERIFIED",
+      "R1": "FALSIFIED",
+      "R2": "FALSIFIED",
+      "R3": "FALSIFIED",
+      "R4": "FALSIFIED"
+    },
+    "description": "Needham-Schroeder public-key protocol, as written by Lowe."
+  },
+  "nsl": {
+    "bounds": {
+      "max_len": 20,
+      "max_runs": 3
+    },
+    "claims": {
+      "I1": "VERIFIED",
+      "I2": "VERIFIED",
+      "I3": "VERIFIED",
+      "I4": "VERIFIED",
+      "R1": "VERIFIED",
+      "R2": "VERIFIED",
+      "R3": "VERIFIED",
+      "R4": "VERIFIED"
+    },
+    "description": "Needham-Schroeder-Lowe public-key protocol."
+  },
+  "replay": {
+    "bounds": {
+      "max_len": 20,
+      "max_runs": 4
+    },
+    "claims": {
+      "A1": "FALSIFIED",
+      "A2": "FALSIFIED",
+      "B1": "FALSIFIED",
+      "B2": "FALSIFIED"
+    },
+    "description": "A one-message protocol with no freshness at all: nothing ties the message to"
+  },
+  "yahalom": {
+    "bounds": {
+      "max_len": 20,
+      "max_runs": 4
+    },
+    "claims": {
+      "A1": "VERIFIED",
+      "A2": "VERIFIED",
+      "A3": "VERIFIED",
+      "B1": "VERIFIED",
+      "B2": "VERIFIED"
+    },
+    "description": "Yahlom (simplified): the initiator offers a fresh nonce under the pairwise"
+  }
+}

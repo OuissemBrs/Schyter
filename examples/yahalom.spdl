@@ -1,0 +1,30 @@
+// Yahlom (simplified): the initiator offers a fresh nonce under the pairwise
+// key, the responder echoes it, the initiator answers with a second fresh nonce
+// encrypted to its own public key, and the responder closes the session by
+// returning both nonces under that same public key.
+//
+// The responder's last message commits to the whole session history, so a man in
+// the middle who opens Alice's first message can impersonate her to Bob and
+// break Bob's agreement claims.
+
+protocol yahalom(A,B) {
+  role A {
+    fresh na: Nonce;  fresh nb: Nonce;
+    send_1(A,B, {A,na}k(A,B));
+    recv_2(B,A, {na}k(A,B));
+    send_3(A,B, {nb}pk(A));
+    recv_4(B,A, {na,nb}pk(A));
+    claim_A1(A,Secret,na);
+    claim_A2(A,Niagree);
+    claim_A3(A,Nisynch);
+  }
+  role B {
+    var na: Nonce;  var nb: Nonce;
+    recv_1(A,B, {A,na}k(A,B));
+    send_2(B,A, {na}k(A,B));
+    recv_3(A,B, {nb}pk(A));
+    send_4(B,A, {na,nb}pk(A));
+    claim_B1(B,Niagree);
+    claim_B2(B,Nisynch);
+  }
+}
