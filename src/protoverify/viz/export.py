@@ -35,11 +35,36 @@ def render_trace(
     Path(options.out).parent.mkdir(parents=True, exist_ok=True)
     if engine == "manim":
         if not manim_available():
-            print("protoverify: manim is not installed; falling back to the matplotlib back-end.\n"
-                  "            install it with:  pip install 'protoverify[manim]'")
+            print(*_manim_missing(), sep="\n")
+            return render_with_matplotlib(trace, _with_fallback_extension(options))
+        if not ffmpeg_available():
+            print(*_ffmpeg_missing(), sep="\n")
             return render_with_matplotlib(trace, _with_fallback_extension(options))
         return render_with_manim(trace, options)
     return render_with_matplotlib(trace, options)
+
+
+def _manim_missing() -> tuple[str, ...]:
+    """Say exactly which tool is absent and how to get it."""
+    return (
+        "protoverify: the 'manim' back-end was requested but manim is not installed.",
+        "            install the Python package with:  pip install 'protoverify[manim]'",
+        "            manim also needs the system libraries Cairo and Pango; see the",
+        "            README section 'Rendering with Manim' for Linux, macOS and Windows.",
+        "            falling back to the matplotlib back-end (GIF/PNG only).",
+    )
+
+
+def _ffmpeg_missing() -> tuple[str, ...]:
+    """Say exactly which tool is absent and how to get it."""
+    return (
+        "protoverify: manim is installed but ffmpeg is not on PATH, so no video",
+        "            can be produced.  Install it with:",
+        "              Linux    sudo apt install ffmpeg",
+        "              macOS    brew install ffmpeg",
+        "              Windows  winget install Gyan.FFmpeg",
+        "            falling back to the matplotlib back-end (GIF/PNG only).",
+    )
 
 
 def _with_fallback_extension(options: RenderOptions) -> RenderOptions:

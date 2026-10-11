@@ -1,13 +1,20 @@
-"""Integration tests: every example against ``examples/expected.json``.
+"""Integration tests: properties of the bundled examples.
 
-The expected file is *data*, not configuration: nothing in the engine reads it,
-so deleting it cannot change a single verification result.  ``test_results_do_not_
-depend_on_expected_json`` asserts exactly that.
+The verdict tables live elsewhere on purpose:
+
+* ``test_reference.py`` compares the engine against the hand-written
+  ``examples/expected_reference.json`` -- the only oracle;
+* ``test_regression.py`` compares the engine against the generated
+  ``examples/regression_snapshot.json`` -- a change detector.
+
+This module covers the properties that are *not* verdict tables, plus the
+statement that neither data file can influence a verification result.
 """
 
 from __future__ import annotations
 
-import json
+import pathlib
+import tempfile
 
 import pytest
 
@@ -17,20 +24,12 @@ from protoverify.core.search import Bounds, Verifier
 from protoverify.core.trace import Status, Trace
 from protoverify.parser import check_or_raise, parse_file
 
-EXPECTED = EXAMPLES / "expected.json"
-SLOW = {"ns", "nsl", "yahalom", "replay"}
-
-
-def expected() -> dict[str, dict[str, object]]:
-    return json.loads(EXPECTED.read_text(encoding="utf-8"))
+#: Bounds used for the slower examples, matching ``tools/make_snapshot.py``.
+BOUNDS = {"nsl": Bounds(max_runs=3), "yahalom": Bounds(timeout=60.0)}
 
 
 def bounds_for(name: str) -> Bounds:
-    if name == "nsl":
-        return Bounds(max_runs=3)
-    if name == "yahalom":
-        return Bounds(timeout=60.0)
-    return Bounds()
+    return BOUNDS.get(name, Bounds())
 
 
 def verify(name: str) -> list[object]:
@@ -38,22 +37,9 @@ def verify(name: str) -> list[object]:
     return Verifier(protocol, bounds_for(name)).verify()
 
 
-@pytest.fixture(scope="module")
-def expectations() -> dict[str, dict[str, object]]:
-    return expected()
-
-
 @pytest.mark.parametrize("name", sorted(list_examples()))
 def test_example_parses_and_passes_static_checks(name: str) -> None:
     check_or_raise(parse_file(str(example_path(name))))
-
-
-@pytest.mark.parametrize("name", sorted(list_examples()))
-def test_example_matches_expected(name: str, expectations: dict[str, dict[str, object]]) -> None:
-    if name in SLOW:
-        pytest.mark.slow(f"{name} exercises the full search")
-    actual = {r.claim: r.status for r in verify(name)}
-    assert actual == expectations[name]["claims"]
 
 
 @pytest.mark.slow
@@ -65,8 +51,7 @@ def test_ns_responder_claims_are_falsified() -> None:
 
 @pytest.mark.slow
 def test_nsl_is_fully_verified() -> None:
-    results = verify("nsl")
-    assert all(r.status == Status.VERIFIED.value for r in results)
+    assert all(r.status == Status.VERIFIED.value for r in verify("nsl"))
 
 
 def test_every_falsified_claim_carries_a_trace() -> None:
@@ -83,38 +68,32 @@ def test_naming_the_missing_fixes_ns() -> None:
     nsl = parse_file(str(example_path("nsl")))
     assert [r.name for r in ns.roles] == [r.name for r in nsl.roles]
     assert [c.label for _, c in ns.all_claims()] == [c.label for _, c in nsl.all_claims()]
-    ns_second = ns.role("I").messages[1].msg
-    nsl_second = nsl.role("I").messages[1].msg
-    assert ns_second != nsl_second
+    assert ns.role("I").messages[1].msg != nsl.role("I").messages[1].msg
 
 
-def test_results_do_not_depend_on_expected_json(
-    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+def test_results_do_not_depend_on_the_data_files(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    backup = EXPECTED.read_text(encoding="utf-8")
+    """Neither oracle nor snapshot is read by the engine; removing both changes nothing."""
+    files = (EXAMPLES / "expected_reference.json", EXAMPLES / "regression_snapshot.json")
+    backup = {p: p.read_text(encoding="utf-8") for p in files}
     try:
-        EXPECTED.unlink()
-        monkeypatch.setattr("protoverify.cli.examples_dir", lambda: None)  # type: ignore[arg-type]
+        for path in files:
+            path.unlink()
+        monkeypatch.setattr("protoverify.cli.examples_dir", lambda: None)
         assert list_examples() == []
         results = {r.claim: r.status for r in verify("ns")}
         assert results["R3"] == Status.FALSIFIED.value
     finally:
         monkeypatch.undo()
-        EXPECTED.write_text(backup, encoding="utf-8")
-    assert EXPECTED.exists()
-    assert "ns" in list_examples()
+        for path, text in backup.items():
+            path.write_text(text, encoding="utf-8")
+    assert list_examples()
 
 
 def test_traces_validate_against_the_schema() -> None:
     for result in verify("ns") + verify("replay"):
         if result.trace is None:
             continue
-        restored = Trace.from_file(result.trace.to_file(_tmp(result.claim)))
-        assert restored.steps == result.trace.steps
-
-
-def _tmp(name: str) -> object:
-    import tempfile
-    from pathlib import Path
-
-    return Path(tempfile.mkdtemp()) / f"{name}.json"
+        path = pathlib.Path(tempfile.mkdtemp()) / f"{result.claim}.json"
+        assert Trace.from_file(result.trace.to_file(path)).steps == result.trace.steps

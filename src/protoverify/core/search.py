@@ -35,12 +35,13 @@ from typing import Any
 from ..parser.ast import ClaimEvent, FreshEvent, Protocol, RecvEvent, Role, SendEvent
 from ..parser.checks import resolve_partner
 from . import claims as claim_semantics
-from .attacker import Attacker, Knowledge
+from .attacker import ATTACKER_CONSTANTS, Attacker, Knowledge
 from .ordering import EventKey, Ordering
 from .replay import Delivery, ReplayError, ReplayResult, replay
 from .run import Run
 from .terms import Atom, Term, Var, short_name
 from .trace import AgentInfo, Edge, RunInfo, Status, Trace
+from .types import TypeEnv
 from .unify import unify
 
 __all__ = ["GUESSABLE_TYPES", "Bounds", "ClaimResult", "Searcher", "Verifier"]
@@ -51,6 +52,17 @@ GUESSABLE_TYPES = frozenset({"Agent", "Ticket"})
 #: Upper bounds that keep the guess space finite.
 MAX_CANDIDATES = 12
 MAX_GUESSES = 128
+
+
+def _accepts(generated_kind: str, declared: str) -> bool:
+    """True when a value of kind ``generated_kind`` may fill a ``declared`` variable.
+
+    ``Ticket`` and ``Any`` are the permissive types and accept anything; a
+    ``Nonce`` variable does not accept the attacker's key.  (Atoms themselves are
+    polymorphic -- see ``core.types`` -- so this rule is stricter on purpose: the
+    attacker should not present its key as if it were a nonce.)
+    """
+    return TypeEnv.builtin().kind(declared) in (generated_kind, "ticket", "any")
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +144,10 @@ class Searcher:
         self.attacker_agent = attacker_agent
         self.honest_pool = tuple(a for a in agent_pool if a != attacker_agent)
         self.full_pool = tuple(dict.fromkeys([*agent_pool, attacker_agent]))
+        self._generated = tuple(
+            (value, TypeEnv.builtin().kind(declared))
+            for declared, value in sorted(ATTACKER_CONSTANTS.items())
+        )
 
     # -- public API -------------------------------------------------------
     def verify_claim(self, role_name: str, claim: ClaimEvent) -> ClaimResult:
@@ -329,10 +345,14 @@ class Searcher:
         """Let the attacker deliver ``event.msg`` by building it from its knowledge.
 
         A receive event may introduce variables the attacker has to fill in.  It
-        may invent a value for ``Agent``/``Ticket`` variables, but a nonce can
-        only ever be bound to something the attacker *already knows* -- usually a
-        nonce it decrypted out of an earlier message.  Guessing an unknown nonce
-        would be unsound and is never attempted.
+        may invent an agent name for an ``Agent``/``Ticket`` variable, and it may
+        use its *own* generated constants (:data:`attacker.ATTACKER_CONSTANTS`)
+        for a ``Nonce``/``Key``/``Data`` variable -- values it created itself, so
+        producing them is sound.  Beyond that a value can only ever be bound to
+        something the attacker *already knows*: usually a nonce it decrypted out
+        of an earlier message.  Guessing an honest party's unknown fresh value
+        would be unsound and is never attempted, which is why ``nM`` can never
+        stand in for ``ni#1``.
         """
         term = run.instantiate(event.msg).substitute(state.sigma)
         out: list[_State] = []
@@ -357,13 +377,10 @@ class Searcher:
         free = sorted(term.vars())
         per_var: list[list[Term]] = []
         for name in free:
-            declared = Var(name, run.var_type(name)).type_name
-            if declared in GUESSABLE_TYPES:
-                per_var.append([Atom(f"{short_name(name)}@{self.attacker_agent}")])
-            else:
-                per_var.append(self._candidate_values(knowledge))
-            if not per_var[-1]:
+            candidates = self._candidates(run.var_type(name), name, knowledge)
+            if not candidates:
                 return []
+            per_var.append(candidates)
         guesses: list[dict[str, Term]] = []
         for combo in itertools.product(*per_var):
             guesses.append(dict(zip(free, combo, strict=True)))
@@ -371,12 +388,34 @@ class Searcher:
                 break
         return guesses
 
+    def _candidates(self, declared: str, name: str, knowledge: Knowledge) -> list[Term]:
+        """The values the attacker may bind a ``declared``-typed variable to.
+
+        Three sources, in order: the agent name it invents for ``Agent`` and
+        ``Ticket`` variables, its own generated constants for the value types,
+        and the atoms it has already learned.  The result is de-duplicated,
+        because the generated constants are also part of ``K0`` and would
+        otherwise be offered twice.
+        """
+        if declared in GUESSABLE_TYPES:
+            return [Atom(f"{short_name(name)}@{self.attacker_agent}")]
+        out: list[Term] = []
+        for value, kind in self._generated:
+            if _accepts(kind, declared):
+                out.append(Atom(value))
+        for term in self._candidate_values(knowledge):
+            if term not in out:
+                out.append(term)
+        return out
+
     def _candidate_values(self, knowledge: Knowledge) -> list[Term]:
-        """Values the attacker may replay into a receive event.
+        """Values the attacker may *replay* into a receive event.
 
         Only *values* qualify: binding a nonce variable to a key or to a
         ciphertext would be nonsense, so the candidates are the atoms the
-        attacker knows -- agent names and the nonces it has decrypted.
+        attacker knows -- agent names, its own constants and the nonces it has
+        decrypted.  Nothing here is an honest party's fresh value unless that
+        value was actually sent, which is exactly what this list records.
         """
         values: list[Term] = [t for t in knowledge if isinstance(t, Atom)]
         values.sort(key=lambda t: t.text())
@@ -702,8 +741,16 @@ class Verifier:
                 names.append(name)
         return tuple(names)
 
-    def verify(self, only: Sequence[str] | None = None) -> list[ClaimResult]:
-        """Verify every claim of the protocol, one shared search per role."""
+    def verify(self, only: Sequence[str] | None = None, *, share: bool = True) -> list[ClaimResult]:
+        """Verify every claim of the protocol.
+
+        By default one search serves all the claims of a ``(role, partner)`` group
+        (see :meth:`Searcher.verify_role`).  ``share=False`` forces one search per
+        claim instead; the results must be identical, which is what
+        ``tests/integration/test_shared_search.py`` checks.  It is exposed as
+        ``protoverify verify --no-share`` so the optimisation can be audited from
+        the command line.
+        """
         results: list[ClaimResult] = []
         for role_name in dict.fromkeys(r for r, _ in self.protocol.all_claims()):
             claims = [
@@ -711,8 +758,13 @@ class Verifier:
                 for r, c in self.protocol.all_claims()
                 if r == role_name and (not only or c.label in only)
             ]
-            if claims:
+            if not claims:
+                continue
+            if share:
                 results.extend(self.searcher.verify_role(role_name, claims))
+            else:
+                for claim in claims:
+                    results.extend(self.searcher.verify_role(role_name, [claim]))
         return results
 
 

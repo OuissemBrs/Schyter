@@ -283,10 +283,23 @@ class Sk(Term):
 
 @dataclass(frozen=True, slots=True)
 class SharedKey(Term):
-    """A pairwise shared key ``k(A,B)``."""
+    """A pairwise shared key ``k(A,B)``.
+
+    The key is **symmetric**: ``k(A,B)`` and ``k(B,A)`` denote the same key.  The
+    two arguments keep the order they were written in -- canonicalising them here
+    would *not* work, because the order would then depend on whether an agent
+    variable is bound yet, so ``k(a,B)`` with ``a:=A`` would have been sorted to
+    ``k(B,a)`` and would no longer equal ``k(A,B)``.  Symmetry is handled where it
+    actually matters, by the unifier, which matches both orderings of a shared
+    key; see ``core.unify`` and DECISIONS.md D12.
+    """
 
     left: Term
     right: Term
+
+    def swapped(self) -> SharedKey:
+        """Return the same key with its two arguments exchanged."""
+        return SharedKey(self.right, self.left)
 
     def children(self) -> tuple[Term, ...]:
         return (self.left, self.right)

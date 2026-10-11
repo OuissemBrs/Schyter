@@ -15,12 +15,15 @@ from ..parser.ast import RecvEvent, SendEvent
 from .attacker import Attacker, Knowledge
 from .ordering import EventKey
 from .run import Run
-from .terms import Atom, Term, leaves
+from .terms import Atom, SharedKey, Term
 from .trace import Step
 
 __all__ = ["Delivery", "ReplayError", "ReplayResult", "replay"]
 
 _FRESH = re.compile(r"^(?P<name>.+)#(?P<run>\d+)$")
+
+#: Term kinds worth showing on the knowledge panel: values and shared keys.
+_VALUE_TERMS = (Atom, SharedKey)
 
 
 class ReplayError(AssertionError):
@@ -75,14 +78,27 @@ def replay(
             continue
         term = _ground_message(runs, key, event, sigma)
         _check_freshness(runs, term)
+        closure, _ = attacker.analyze(knowledge | {term})
+        learned = _newly_learned(closure, knowledge)
         step = _step_for(runs, key, event, term, deliveries, attacker,
-                         attacker_agent, knowledge, delivered_from)
+                         attacker_agent, knowledge, delivered_from, learned)
         delivered_from.append((step.frm, step.msg))
-        knowledge = set(attacker.analyze(knowledge | {term})[0])
+        knowledge = set(closure)
         result.step_of[key] = len(result.steps) + 1
         result.steps.append(_numbered(step, result.step_of[key]))
         result.knowledge.append(frozenset(knowledge))
     return result
+
+
+def _newly_learned(closure: Knowledge, before: set[Term]) -> tuple[str, ...]:
+    """The value-terms the attacker's knowledge gained from one message.
+
+    The difference is taken between the Dolev-Yao closures before and after the
+    message, so a nonce sealed inside a ciphertext addressed to somebody else is
+    *not* reported as learned; only what ``analyze`` can actually derive shows up.
+    """
+    gained = [t for t in closure - frozenset(before) if isinstance(t, _VALUE_TERMS)]
+    return tuple(sorted({t.text() for t in gained}, key=str))
 
 
 def _numbered(step: Step, index: int) -> Step:
@@ -130,13 +146,13 @@ def _step_for(
     attacker_agent: str,
     knowledge: set[Term],
     delivered: list[tuple[str, str]],
+    learned: tuple[str, ...],
 ) -> Step:
     """Build and validate the trace step for one message event."""
     run = runs[key[0]]
     label = str(event.label)
-    fresh = tuple(sorted({x.text() for x in leaves(term) if x not in knowledge}, key=str))
     if isinstance(event, SendEvent):
-        return _honest_step(run, label, term, fresh, "send")
+        return _honest_step(run, label, term, learned, "send")
     delivery = deliveries.get(key)
     if delivery is None:
         raise ReplayError(f"receive event {key} was never resolved")
@@ -148,12 +164,12 @@ def _step_for(
         )
     relayed = (run.peer, term.text()) in delivered
     return _attacker_step(
-        run, label, term, fresh, attacker_agent,
+        run, label, term, learned, attacker_agent,
         "forward" if relayed else "forge",
     )
 
 
-def _honest_step(run: Run, label: str, term: Term, fresh: tuple[str, ...], verb: str) -> Step:
+def _honest_step(run: Run, label: str, term: Term, learned: tuple[str, ...], verb: str) -> Step:
     """Build the step of a message an honest run sent or received directly."""
     return Step(
         i=0,
@@ -163,13 +179,13 @@ def _honest_step(run: Run, label: str, term: Term, fresh: tuple[str, ...], verb:
         to=run.peer if verb == "send" else run.agent,
         label=label,
         msg=term.text(),
-        attacker_new=fresh if verb == "send" else (),
+        attacker_new=learned if verb == "send" else (),
         note=_note(run, label, verb),
     )
 
 
 def _attacker_step(
-    run: Run, label: str, term: Term, fresh: tuple[str, ...], attacker_agent: str, verb: str
+    run: Run, label: str, term: Term, learned: tuple[str, ...], attacker_agent: str, verb: str
 ) -> Step:
     """Build the step of a message the attacker supplied itself."""
     return Step(
@@ -180,7 +196,7 @@ def _attacker_step(
         to=run.agent,
         label=label,
         msg=term.text(),
-        attacker_new=fresh,
+        attacker_new=learned,
         note=_note(run, label, verb, attacker=attacker_agent),
     )
 

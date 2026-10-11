@@ -34,10 +34,29 @@ from .terms import (
     Var,
 )
 
-__all__ = ["Attacker", "Derivation", "Knowledge", "KnowledgeStep"]
+__all__ = [
+    "ATTACKER_CONSTANTS",
+    "Attacker",
+    "Derivation",
+    "Knowledge",
+    "KnowledgeStep",
+]
 
 #: A Dolev-Yao knowledge set.
 Knowledge = frozenset[Term]
+
+#: Values the adversary invents for itself, one per basic value type.
+#:
+#: These are *attacker-generated*: the adversary creates them out of nothing, so
+#: using them is always sound.  What stays forbidden is guessing an honest
+#: party's fresh value before that value has been sent -- see
+#: :meth:`Searcher._candidate_values`, which only ever replays atoms the adversary
+#: has already learned.
+#:
+#: The names are deliberately unlike any protocol constant and unlike the
+#: ``name#run`` rendering of a run's fresh values, so an attacker constant can
+#: never unify with a run's own nonce.
+ATTACKER_CONSTANTS: dict[str, str] = {"Nonce": "nM", "Key": "kM", "Data": "dM"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,8 +108,17 @@ class Attacker:
 
     # -- initial knowledge ------------------------------------------------
     def initial(self) -> Knowledge:
-        """Return the attacker's initial knowledge ``K0``."""
+        """Return the attacker's initial knowledge ``K0``.
+
+        Besides the protocol's public constants, every agent's name and public
+        key, the compromised agents' secret keys and the shared keys it can
+        derive, ``K0`` holds the attacker's *own* generated values (see
+        :data:`ATTACKER_CONSTANTS`).  Those are sound to use because the attacker
+        made them; guessing an honest fresh value would not be, and is never
+        attempted.
+        """
         known: set[Term] = set(self.constants)
+        known |= {Atom(value) for value in ATTACKER_CONSTANTS.values()}
         for agent in self.agents:
             known.add(Atom(agent))
             known.add(Pk(Atom(agent)))
@@ -120,20 +148,25 @@ class Attacker:
         ``newly_derived`` lists the terms that were *not* in ``known`` but are
         in the closure, in derivation order.  When ``log`` is true the same
         information is appended to :attr:`log` under step number ``step``.
+
+        The result is a **fixed point**: a decomposition that becomes applicable
+        only after an earlier rule fired is still applied.  A single worklist
+        sweep is not enough, because a term can be examined before the key it
+        needs has entered the closure, and would then never be revisited.
         """
-        start: set[Term] = set(known)
-        closure: set[Term] = set(start)
+        closure: set[Term] = set(known)
         newly: list[Term] = []
         derivations: list[Derivation] = []
-        pending = list(start)
-        while pending:
-            term = pending.pop()
-            for derived, rule, source in self._decompose(term, closure):
-                if derived not in closure:
-                    closure.add(derived)
-                    newly.append(derived)
-                    derivations.append(Derivation(derived, rule, source))
-                    pending.append(derived)
+        changed = True
+        while changed:
+            changed = False
+            for term in list(closure):
+                for derived, rule, source in self._decompose(term, closure):
+                    if derived not in closure:
+                        closure.add(derived)
+                        newly.append(derived)
+                        derivations.append(Derivation(derived, rule, source))
+                        changed = True
         if log and (newly or derivations):
             self.log.record(step if step is not None else 0, newly, derivations)
         return frozenset(closure), tuple(newly)

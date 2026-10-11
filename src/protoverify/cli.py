@@ -94,6 +94,13 @@ def _add_verify(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     verify.add_argument("--json", dest="json_out", help="write the full result as JSON")
     verify.add_argument("--trace-dir", default="traces", help="directory for attack traces")
     verify.add_argument("--claim", action="append", default=None, help="only these claims")
+    verify.add_argument(
+        "--no-share",
+        dest="share",
+        action="store_false",
+        default=True,
+        help="run one search per claim instead of sharing one per (role, partner)",
+    )
 
 
 def _add_animate(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -215,7 +222,7 @@ def _cmd_verify(args: argparse.Namespace, palette: Palette) -> int:
         max_states=args.max_states,
     )
     verifier = Verifier(protocol, bounds, _split(args.compromise))
-    results = verifier.verify(args.claim)
+    results = verifier.verify(args.claim, share=args.share)
     if not args.quiet:
         print(render_table(protocol.name, results, palette))
     trace_dir = pathlib.Path(args.trace_dir)

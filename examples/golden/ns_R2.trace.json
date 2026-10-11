@@ -1,0 +1,118 @@
+{
+  "protocol": "ns",
+  "claim": "R2",
+  "status": "FALSIFIED",
+  "claim_kind": "Secret",
+  "bounds": {
+    "max_runs": 4,
+    "max_len": 20
+  },
+  "agents": [
+    {
+      "id": "I",
+      "kind": "honest"
+    },
+    {
+      "id": "M",
+      "kind": "attacker"
+    },
+    {
+      "id": "R",
+      "kind": "honest"
+    }
+  ],
+  "runs": [
+    {
+      "id": 1,
+      "role": "R",
+      "agent": "R",
+      "peer": "I"
+    },
+    {
+      "id": 2,
+      "role": "I",
+      "agent": "I",
+      "peer": "M"
+    }
+  ],
+  "steps": [
+    {
+      "i": 1,
+      "type": "send",
+      "run": 2,
+      "from": "I",
+      "to": "M",
+      "label": "1",
+      "msg": "{I,ni#2}pk(M)",
+      "attacker_new": [
+        "ni#2"
+      ],
+      "note": "I sends message 1 to M."
+    },
+    {
+      "i": 2,
+      "type": "attacker_inject",
+      "run": null,
+      "from": "M",
+      "to": "R",
+      "label": "1",
+      "msg": "{I,ni#2}pk(R)",
+      "attacker_new": [],
+      "note": "M forges message 1 and injects it into R's session."
+    },
+    {
+      "i": 3,
+      "type": "send",
+      "run": 1,
+      "from": "R",
+      "to": "I",
+      "label": "2",
+      "msg": "{ni#2,nr#1}pk(I)",
+      "attacker_new": [],
+      "note": "R sends message 2 to I."
+    },
+    {
+      "i": 4,
+      "type": "attacker_forward",
+      "run": null,
+      "from": "M",
+      "to": "I",
+      "label": "2",
+      "msg": "{ni#2,nr#1}pk(I)",
+      "attacker_new": [],
+      "note": "M relays message 2 on to I, pretending to be M."
+    },
+    {
+      "i": 5,
+      "type": "send",
+      "run": 2,
+      "from": "I",
+      "to": "M",
+      "label": "3",
+      "msg": "{nr#1}pk(M)",
+      "attacker_new": [
+        "nr#1"
+      ],
+      "note": "I sends message 3 to M."
+    },
+    {
+      "i": 6,
+      "type": "attacker_inject",
+      "run": null,
+      "from": "M",
+      "to": "R",
+      "label": "3",
+      "msg": "{nr#1}pk(R)",
+      "attacker_new": [],
+      "note": "M forges message 3 and injects it into R's session."
+    }
+  ],
+  "edges": [
+    {
+      "from": 3,
+      "to": 4,
+      "kind": "message"
+    }
+  ],
+  "violation": "The attacker learns nr#1, which R claimed to be secret."
+}

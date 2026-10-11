@@ -57,10 +57,23 @@ These are honest gaps, not bugs:
   (never receives its last message) is therefore not produced: an incomplete
   partner run is indistinguishable from an absent one in the final check.
 * **Guessing is restricted.** The attacker may invent values for `Agent` and
-  `Ticket` variables, and may replay any *atom* it knows (typically a nonce it
-  decrypted earlier), but it may not bind a nonce variable to a constructed
-  term such as `pk(a)` or `h(x)`. That keeps the search finite and avoids
-  nonsense bindings; it can, in principle, miss an attack that needs one.
+  `Ticket` variables, may use the values it generated for itself (`nM`, `kM`,
+  `dM` — see `attacker.ATTACKER_CONSTANTS`), and may replay any *atom* it knows
+  (typically a nonce it decrypted earlier), but it may not bind a nonce variable
+  to a constructed term such as `pk(a)` or `h(x)`. That keeps the search finite
+  and avoids nonsense bindings; it can, in principle, miss an attack that needs
+  one.
+* **It can never guess an honest fresh value.** The attacker may not produce
+  `ni#1` before some run actually sends it. This is sound: an unguessable nonce
+  is exactly what makes the secrecy claims mean something. The flip side is that
+  an attack which *depends* on such a guess is out of scope.
+* **Atoms are polymorphic, so replayed atoms are not type-checked.** The typing
+  discipline (`core/types.py`) accepts any `Atom` for any declared type, which
+  means the attacker may bind a `Nonce` variable to an agent name, because agent
+  names are atoms in its knowledge. The attacker-generated constants *are* type
+  filtered (`search._accepts`), but the replayed atoms are not. This is looser
+  than a strictly typed Dolev-Yao model and can produce attacks that a typed one
+  would not; it never produces a false `VERIFIED`.
 * **Candidate truncation.** At most 12 candidate values and 128 guess
   combinations per receive event. A knowledge set larger than that may hide the
   value an attack needs.

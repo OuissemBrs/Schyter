@@ -96,10 +96,35 @@ def _match_same(a: Term, b: Term, s: Sigma, required: Requirements) -> bool:
         )
     if isinstance(a, SharedKey):
         key = cast(SharedKey, b)
-        return _match(a.left, key.left, s, required) and _match(a.right, key.right, s, required)
+        return _match_shared(a, key, s, required)
     if isinstance(a, (Pk, Sk)):
         single = cast(Pk | Sk, b)
         return _match(a.agent, single.agent, s, required)
+    return False
+
+
+def _match_shared(
+    a: SharedKey, b: SharedKey, s: Sigma, required: Requirements
+) -> bool:
+    """Match two shared keys, which are symmetric: ``k(A,B)`` is ``k(B,A)``.
+
+    The written order is kept on the terms, because it depends on whether an
+    agent variable is bound yet, so symmetry is applied here.  Both orderings are
+    tried on a *copy* of the substitution and the one that succeeds is kept, so a
+    failed first attempt cannot leave bindings behind.
+    """
+    if _match(a.left, b.left, s, required) and _match(a.right, b.right, s, required):
+        return True
+    trial = dict(s)
+    trial_required = {name: set(types) for name, types in required.items()}
+    if _match(a.left, b.right, trial, trial_required) and _match(
+        a.right, b.left, trial, trial_required
+    ):
+        s.clear()
+        s.update(trial)
+        required.clear()
+        required.update(trial_required)
+        return True
     return False
 
 

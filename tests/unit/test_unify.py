@@ -82,9 +82,36 @@ def test_unify_respects_previous_bindings() -> None:
 def test_key_terms_unify_positionally() -> None:
     assert solve(Pk(Var("a", "Agent")), Pk(Atom("A"))) == {"a": Atom("A")}
     assert solve(Sk(Var("a", "Agent")), Sk(Atom("A"))) == {"a": Atom("A")}
+
+
+def test_a_shared_key_is_symmetric() -> None:
+    """``k(A,B)`` and ``k(B,A)`` are the same key, so they unify.
+
+    Symmetry is a property of the *unifier*, not of the term: the two arguments
+    keep the order they were written in, because that order depends on whether an
+    agent variable is bound yet, and canonicalising it in the constructor would
+    turn ``k(a,B)`` into ``k(B,a)``, which no longer matches ``k(A,B)`` once
+    ``a`` is bound.  See DECISIONS.md D12.
+    """
+    assert solve(SharedKey(Atom("A"), Atom("B")), SharedKey(Atom("B"), Atom("A"))) == {}
+    assert solve(SharedKey(Atom("A"), Atom("B")), SharedKey(Atom("C"), Atom("D"))) is None
+
+
+def test_a_shared_key_var_unifies_from_either_side() -> None:
+    """The agent variable may sit on either side; the key still matches."""
     assert solve(SharedKey(Var("a", "Agent"), Atom("B")), SharedKey(Atom("A"), Atom("B"))) == {
         "a": Atom("A")
     }
+    assert solve(SharedKey(Atom("B"), Var("a", "Agent")), SharedKey(Atom("B"), Atom("A"))) == {
+        "a": Atom("A")
+    }
+
+
+def test_shared_keys_match_through_a_ciphertext() -> None:
+    """The regression this fixes: a recv and a send naming the key oppositely."""
+    recv = SymEnc(Tuple((Var("r1::na", "Nonce"),)), SharedKey(Atom("A"), Atom("B")))
+    send = SymEnc(Tuple((Var("r2::nb", "Nonce"),)), SharedKey(Atom("B"), Atom("A")))
+    assert solve(recv, send) == {"r1::na": Var("r2::nb", "Nonce")}
 
 
 def test_signature_structure() -> None:
