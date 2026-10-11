@@ -281,17 +281,21 @@ class Sk(Term):
         return f"sk({self.agent.text(True)})"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class SharedKey(Term):
     """A pairwise shared key ``k(A,B)``.
 
-    The key is **symmetric**: ``k(A,B)`` and ``k(B,A)`` denote the same key.  The
-    two arguments keep the order they were written in -- canonicalising them here
-    would *not* work, because the order would then depend on whether an agent
-    variable is bound yet, so ``k(a,B)`` with ``a:=A`` would have been sorted to
-    ``k(B,a)`` and would no longer equal ``k(A,B)``.  Symmetry is handled where it
-    actually matters, by the unifier, which matches both orderings of a shared
-    key; see ``core.unify`` and DECISIONS.md D12.
+    The key is **symmetric**: ``k(A,B)`` and ``k(B,A)`` are the same key, so
+    equality and hashing ignore the order of the two arguments while ``left`` and
+    ``right`` keep the order they were written in.
+
+    Canonicalising the arguments at construction does *not* work: the order would
+    then depend on whether an agent variable is bound yet, so ``k(a,B)`` would be
+    stored as ``k(B,a)`` and would stop matching ``k(A,B)`` once ``a`` is bound.
+    Order-insensitive identity avoids that entirely, and it also keeps the
+    unifier's contract -- ``solve(a, b)`` returns a substitution under which the
+    two terms are *equal* -- true, which a swap-only matcher would break.  See
+    ``core.unify`` and DECISIONS.md D12.
     """
 
     left: Term
@@ -301,11 +305,26 @@ class SharedKey(Term):
         """Return the same key with its two arguments exchanged."""
         return SharedKey(self.right, self.left)
 
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, SharedKey):
+            return _same_key(self, other)
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash((SharedKey, frozenset((self.left, self.right))))
+
     def children(self) -> tuple[Term, ...]:
         return (self.left, self.right)
 
     def text(self, nested: bool = False) -> str:
         return f"k({self.left.text(True)},{self.right.text(True)})"
+
+
+def _same_key(a: SharedKey, b: SharedKey) -> bool:
+    """True when ``a`` and ``b`` are the same key in either argument order."""
+    return (a.left == b.left and a.right == b.right) or (
+        a.left == b.right and a.right == b.left
+    )
 
 
 # ---------------------------------------------------------------------------

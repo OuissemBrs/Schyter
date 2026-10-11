@@ -1,7 +1,108 @@
 # PROGRESS
 
-Review round 2 log. Round 1 is below under "Review round 1".
-Evidence is command output, not assertion.
+Review round 3 log. Rounds 1 and 2 are below under "Review round 1" / "Review
+round 2". Evidence is command output, not assertion.
+
+---
+
+# Review round 3
+
+## BLOCKER: `docs/SPEC.md` is not in the workspace
+
+The round-3 brief says "The full specification is now in docs/SPEC.md. Read ALL
+of it first." It is not there, and it is not anywhere on this machine.
+
+```
+$ Test-Path docs\SPEC.md
+False
+
+$ Get-ChildItem docs
+architecture.md  claims.md  limitations.md  spdl.md  trace-schema.md     # 5 files, no SPEC
+
+$ git log --all --oneline
+7be5460 second commit
+bb4bafd first commit
+
+$ git log --all --pretty=format: --name-only | Sort-Object -Unique | Select-String SPEC
+(no output -- neither commit ever contained a SPEC file)
+
+$ git stash list / git branch -a / git tag
+(empty / main only / empty)
+
+$ Select-String -Path <every .md,.py,.spdl,.json in the repo> -Pattern '\bIagree\b|\bIsynch\b'
+(no matches)
+```
+
+The only thing new since round 2 is commit `7be5460 "second commit"`, which
+contains *my own* round-1 and round-2 work and no specification.
+
+Tasks 1–5 and the property-test half of task 6 all require the document:
+section 10's example files, 10.7's reference verdicts, 4.2's claim syntax, 6.2
+and 6.3's `Iagree`/`Isynch` semantics, 5.1's typing rules, 7.6's footnote and
+12.4's property tests. I have not guessed any of them. Writing six protocol
+files and a reference oracle from invention would produce something that looks
+complete and is measured against requirements I made up -- the opposite of what
+the three rounds of review have been guarding against.
+
+## Issue 10 (round 3, task 6) — hypothesis made reproducible — DONE
+
+Fully specified in the round-3 brief, so no spec needed.
+
+* `tests/conftest.py` registers two profiles: `ci` (derandomised, default) and
+  `thorough` (derandomised, `max_examples=500`).
+* `pyproject.toml` sets `addopts = "--hypothesis-seed=0"`, so a failing example
+  replays from a printed seed and a green run is reproducible.
+* Verified deterministic across four consecutive runs:
+
+```
+$ for i in 1..4; do pytest tests/property -q; done
+14 passed in 41.17s
+14 passed in 41.09s
+14 passed in 41.84s
+14 passed in 42.00s
+
+$ pytest tests/property -q --hypothesis-profile=thorough
+14 passed in 211.53s
+```
+
+## Issue 11 — derandomising the generator exposed a real defect in my own D12 fix
+
+The first derandomised run failed immediately:
+
+```
+FAILED tests/property/test_properties.py::test_unifying_both_sides_yields_equal_terms
+left  = SharedKey(A, B)
+right = SharedKey(B, A)
+E  AssertionError: assert SharedKey(...) == SharedKey(...)
+```
+
+This is **my** bug from round 2, not a pre-existing one. The round-2 fix taught
+`unify._match_shared` to try both argument orders of a shared key. That made
+`solve` succeed but broke the fundamental unifier contract: `solve(a, b)` must
+return a substitution under which `a·σ` and `b·σ` are **equal**, and here they
+were only equivalent *up to a key-order swap*. In the search, a send would then
+"match" a recv whose grounded messages differ, and the trace would be dropped by
+the `ReplayError` guard -- safe, but a silently lost match.
+
+**Fix.** Symmetry is a property of the *term*, so it now lives in `SharedKey`'s
+identity: `eq=False` on the dataclass, with order-insensitive `__eq__` and
+matching `__hash__` (`hash((SharedKey, frozenset((left, right))))`). `left` and
+`right` keep the written order, so rendering is unchanged. `_match_shared` stays,
+because order-insensitive equality cannot decide which agent variable goes where.
+
+This is the second time in two rounds that a *cold* hypothesis database hid a real
+defect; see D13. Derandomising is what made it reproducible.
+
+## Round 3 status
+
+```
+pytest -q              -> 340 passed, 2 skipped (manim; ffmpeg/mp4)
+mypy --strict src      -> Success: no issues found in 28 source files
+ruff check .           -> All checks passed!
+hypothesis profiles    -> ci (seed 0, deterministic) + thorough (max_examples=500)
+verdicts changed       -> none, on all 38 claims of the 6 bundled examples
+engine bugs fixed      -> 1 more (SharedKey identity; see D12.1)
+```
 
 ---
 

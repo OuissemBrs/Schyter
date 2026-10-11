@@ -58,6 +58,13 @@ markers = [
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 
+# CI must be reproducible: the same seed and a derandomised engine mean a green
+# run today is the same green run tomorrow, and a failure can be replayed from the
+# printed seed.  The profiles themselves are registered in tests/conftest.py, which
+# is the single source of truth.  For a deeper local sweep:
+#     pytest --hypothesis-profile=thorough
+addopts = "--hypothesis-seed=0"
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

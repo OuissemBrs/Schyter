@@ -342,6 +342,51 @@ unifies *positionally*, which is exactly the assumption being removed. It was
 replaced by three tests that assert the real contract: symmetry, a variable on
 either side, and the ciphertext regression case.
 
+### D12.1 — the swap-only matcher was not enough; symmetry is in `__eq__`
+
+The first version of this fix taught `unify._match_shared` to try both argument
+orders. That made `solve` succeed but **broke the fundamental MGU contract**,
+which the property suite caught as soon as the generator became derandomised:
+
+```
+>>> solve(SharedKey(A, B), SharedKey(B, A))
+{}
+>>> SharedKey(A,B) == SharedKey(B,A)          # after applying that sigma
+False
+```
+
+`solve(a, b)` is supposed to return a substitution under which `a·σ` and `b·σ`
+are *equal*. With swap-matching alone they were only *equivalent up to a key-order
+swap*, so the two grounded terms stayed different. In the search that would mean
+a send "matched" a recv whose grounded messages were not actually the same, and
+the trace would then be dropped by the `ReplayError` guard — safe, but a silently
+lost match.
+
+**Better fix.** Make the *identity* of a shared key order-insensitive instead of
+patching the matcher:
+
+```python
+@dataclass(frozen=True, slots=True, eq=False)
+class SharedKey(Term):
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, SharedKey):
+            return _same_key(self, other)
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash((SharedKey, frozenset((self.left, self.right))))
+```
+
+`left`/`right` still keep the written order, so rendering is unchanged, and
+binding `k(a,B)` with `k(A,B)` still works because the canonicalisation is *not*
+baked into the stored arguments. `_match_shared` is kept as well: it is still
+needed for the variable case, where order-insensitive equality cannot decide
+which agent variable goes where.
+
+**Why this is the right shape.** Symmetry of the key is a property of the *term*,
+so it belongs in the term's identity — not in the unifier, which would then have
+to know about it too, and not in the constructor, which cannot know yet.
+
 ---
 
 ## D13. `analyze` must reach a fixed point, not a single sweep
